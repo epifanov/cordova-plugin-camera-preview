@@ -1,5 +1,7 @@
 package com.cordovaplugincamerapreview;
 
+import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.pm.ActivityInfo;
 import android.app.Fragment;
@@ -7,6 +9,9 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.media.AudioManager;
 import android.util.Base64;
 import android.graphics.BitmapFactory;
@@ -28,6 +33,7 @@ import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.OrientationEventListener;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -38,7 +44,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import androidx.exifinterface.media.ExifInterface;
-
+import com.intentfilter.androidpermissions.PermissionManager;
 import org.apache.cordova.LOG;
 
 import java.io.ByteArrayInputStream;
@@ -49,6 +55,7 @@ import java.io.IOException;
 import java.lang.Exception;
 import java.lang.Integer;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Arrays;
@@ -71,6 +78,13 @@ public class CameraActivity extends Fragment {
     void onStopRecordVideoError(String error);
   }
 
+  private OrientationEventListener mOrientationEventListener;
+  private int mCurrentOrientation;
+  private LocationManager mLocationManager;
+  private LocationListener mLocationListener;
+  private Location mLocation;
+  private Activity mActivity;
+  private Context mContext;
   private CameraPreviewListener eventListener;
   private static final String TAG = "CameraActivity";
   public FrameLayout mainLayout;
@@ -117,11 +131,76 @@ public class CameraActivity extends Fragment {
   @Override
   public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
     appResourcesPackage = getActivity().getPackageName();
+    mActivity = getActivity();
+    mContext = mActivity.getApplicationContext();
 
     // Inflate the layout for this fragment
     view = inflater.inflate(getResources().getIdentifier("camera_activity", "layout", appResourcesPackage), container, false);
     createCameraPreview();
+    initOrientationEventListener();
+    initLocationUpdatesListener();
+    requestLocationUpdates();
     return view;
+  }
+
+  private void initLocationUpdatesListener() {
+    mLocationManager = (LocationManager) mContext.getSystemService(mContext.LOCATION_SERVICE);
+    mLocationListener = new LocationListener() {
+
+      @Override
+      public void onProviderDisabled(String provider) {
+      }
+
+      @Override
+      public void onProviderEnabled(String provider) {
+      }
+
+      @Override
+      public void onLocationChanged(Location location) {
+        mLocation = location;
+      }
+
+      @Override
+      public void onStatusChanged(String provider, int status, Bundle extras) {
+      }
+    };
+  }
+
+  private void initOrientationEventListener() {
+    mOrientationEventListener = new OrientationEventListener(mActivity) {
+      @Override
+      public void onOrientationChanged(int orientation) {
+        if (orientation >= 330 || orientation < 30) {
+          mCurrentOrientation = Surface.ROTATION_0;
+        } else if (orientation >= 60 && orientation < 120) {
+          mCurrentOrientation = Surface.ROTATION_90;
+        } else if (orientation >= 150 && orientation < 210) {
+          mCurrentOrientation = Surface.ROTATION_180;
+        } else if (orientation >= 240 && orientation < 300) {
+          mCurrentOrientation = Surface.ROTATION_270;
+        }
+      }
+    };
+
+    mOrientationEventListener.enable();
+  }
+
+  private void requestLocationUpdates() {
+    ArrayList<String> geolocationPermissions = new ArrayList<String>();
+    geolocationPermissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+    geolocationPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+    PermissionManager permissionManager = PermissionManager.getInstance(mContext);
+    permissionManager.checkPermissions(geolocationPermissions, new PermissionManager.PermissionRequestListener() {
+      @SuppressLint("MissingPermission")
+      @Override
+      public void onPermissionGranted() {
+        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000 * 10, 10, mLocationListener);
+        mLocationManager.requestLocationUpdates( LocationManager.NETWORK_PROVIDER, 1000 * 10, 10, mLocationListener);
+      }
+
+      @Override
+      public void onPermissionDenied() {}
+    });
   }
 
   public void setRect(int x, int y, int width, int height){
@@ -323,13 +402,34 @@ public class CameraActivity extends Fragment {
         }
       });
     }
+    mOrientationEventListener.enable();
   }
 
   @Override
   public void onPause() {
     super.onPause();
+    mOrientationEventListener.disable();
+    mLocationManager.removeUpdates(mLocationListener);
 
     // Because the Camera object is a shared resource, it's very important to release it when the activity is paused.
+    if (mCamera != null) {
+      setDefaultCameraId();
+      mPreview.setCamera(null, -1);
+      mCamera.setPreviewCallback(null);
+      mCamera.release();
+      mCamera = null;
+    }
+
+    Activity activity = getActivity();
+    muteStream(false, activity);
+  }
+
+  @Override
+  public void onDestroyView() {
+    super.onDestroyView();
+    mOrientationEventListener.disable();
+    mLocationManager.removeUpdates(mLocationListener);
+
     if (mCamera != null) {
       setDefaultCameraId();
       mPreview.setCamera(null, -1);
@@ -444,6 +544,19 @@ public class CameraActivity extends Fragment {
     return getTempDirectoryPath() + "/cpcp_capture_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8) + ".jpg";
   }
 
+  private int getRotationInDegrees() {
+    switch (mCurrentOrientation) {
+      case Surface.ROTATION_90:
+        return 90;
+      case Surface.ROTATION_180:
+        return 180;
+      case Surface.ROTATION_270:
+        return 270;
+      default:
+        return 0;
+    }
+  }
+
   PictureCallback jpegPictureCallback = new PictureCallback(){
     public void onPictureTaken(byte[] data, Camera arg1){
       Log.d(TAG, "CameraPreview jpegPictureCallback");
@@ -454,12 +567,8 @@ public class CameraActivity extends Fragment {
           if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
             matrix.preScale(1.0f, -1.0f);
           }
-
-          ExifInterface exifInterface = new ExifInterface(new ByteArrayInputStream(data));
-          int rotation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
-          int rotationInDegrees = exifToDegrees(rotation);
-
-          if (rotation != 0f) {
+          int rotationInDegrees = getRotationInDegrees();
+          if (rotationInDegrees != 0) {
             matrix.preRotate(rotationInDegrees);
           }
 
@@ -483,6 +592,9 @@ public class CameraActivity extends Fragment {
           FileOutputStream out = new FileOutputStream(path);
           out.write(data);
           out.close();
+          ExifInterface exif = new ExifInterface(path);
+          exif.setGpsInfo(mLocation);
+          exif.saveAttributes();
           eventListener.onPictureTaken(path);
         }
         Log.d(TAG, "CameraPreview pictureTakenHandler called back");
@@ -670,7 +782,6 @@ public class CameraActivity extends Fragment {
           }
 
           params.setRotation(mPreview.getDisplayOrientation());
-
           mCamera.setParameters(params);
           mCamera.takePicture(shutterCallback, null, jpegPictureCallback);
         }

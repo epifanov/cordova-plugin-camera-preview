@@ -545,9 +545,7 @@ public class CameraActivity extends Fragment {
   }
 
   private int getRotationInDegrees() {
-    Camera.CameraInfo info = new Camera.CameraInfo();
-    Camera.getCameraInfo(defaultCameraId, info);
-    boolean frontCamera = info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT;
+    boolean frontCamera = mPreview.getCameraFacing() == Camera.CameraInfo.CAMERA_FACING_FRONT;
     switch (mCurrentOrientation) {
       case Surface.ROTATION_90:
         return frontCamera ? 270 : 90;

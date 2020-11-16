@@ -794,6 +794,7 @@ public class CameraActivity extends Fragment {
 
           params.setRotation(mPreview.getDisplayOrientation());
           mCamera.setParameters(params);
+          mCamera.enableShutterSound(false);
 
           AudioManager audioManager = (AudioManager) getActivity().getApplicationContext()
             .getSystemService(Context.AUDIO_SERVICE);

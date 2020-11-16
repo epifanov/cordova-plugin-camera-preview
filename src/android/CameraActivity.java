@@ -13,6 +13,7 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
+import android.media.MediaActionSound;
 import android.util.Base64;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -121,6 +122,7 @@ public class CameraActivity extends Fragment {
   private RecordingState mRecordingState = RecordingState.INITIALIZING;
   private MediaRecorder mRecorder = null;
   private String recordFilePath;
+  private MediaActionSound mSound;
 
   public void setEventListener(CameraPreviewListener listener){
     eventListener = listener;
@@ -411,6 +413,10 @@ public class CameraActivity extends Fragment {
     mOrientationEventListener.disable();
     mLocationManager.removeUpdates(mLocationListener);
 
+    if (mSound != null) {
+      mSound.release();
+    }
+
     // Because the Camera object is a shared resource, it's very important to release it when the activity is paused.
     if (mCamera != null) {
       setDefaultCameraId();
@@ -429,6 +435,10 @@ public class CameraActivity extends Fragment {
     super.onDestroyView();
     mOrientationEventListener.disable();
     mLocationManager.removeUpdates(mLocationListener);
+
+    if (mSound != null) {
+      mSound.release();
+    }
 
     if (mCamera != null) {
       setDefaultCameraId();
@@ -785,23 +795,19 @@ public class CameraActivity extends Fragment {
           params.setRotation(mPreview.getDisplayOrientation());
           mCamera.setParameters(params);
 
-          ShutterCallback currentShutterCallback;
           AudioManager audioManager = (AudioManager) getActivity().getApplicationContext()
             .getSystemService(Context.AUDIO_SERVICE);
           int ringerMode = audioManager.getRingerMode();
           int volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
 
           Log.d(TAG, "AudioManager ringerMode: " + ringerMode + "volume: " + volume);
-          if (ringerMode == AudioManager.RINGER_MODE_SILENT ||
-            ringerMode == AudioManager.RINGER_MODE_VIBRATE ||
-            volume == 0) {
-            // disable sound when canDisableShutterSound == false
-            currentShutterCallback = null;
-          } else {
-            currentShutterCallback = shutterCallback;
+
+          if (ringerMode == AudioManager.RINGER_MODE_NORMAL && volume > 0) {
+            mSound = new MediaActionSound();
+            mSound.play(MediaActionSound.SHUTTER_CLICK);
           }
 
-          mCamera.takePicture(currentShutterCallback, null, jpegPictureCallback);
+          mCamera.takePicture(null, null, jpegPictureCallback);
         }
       }.start();
     } else {

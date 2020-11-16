@@ -14,6 +14,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.media.MediaActionSound;
+import android.os.Build;
 import android.util.Base64;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -135,6 +136,8 @@ public class CameraActivity extends Fragment {
     appResourcesPackage = getActivity().getPackageName();
     mActivity = getActivity();
     mContext = mActivity.getApplicationContext();
+    mSound = new MediaActionSound();
+    mSound.load(MediaActionSound.SHUTTER_CLICK);
 
     // Inflate the layout for this fragment
     view = inflater.inflate(getResources().getIdentifier("camera_activity", "layout", appResourcesPackage), container, false);
@@ -366,6 +369,8 @@ public class CameraActivity extends Fragment {
     super.onResume();
 
     mCamera = Camera.open(defaultCameraId);
+    mSound = new MediaActionSound();
+    mSound.load(MediaActionSound.SHUTTER_CLICK);
 
     if (cameraParameters != null) {
       mCamera.setParameters(cameraParameters);
@@ -796,15 +801,15 @@ public class CameraActivity extends Fragment {
           mCamera.setParameters(params);
           mCamera.enableShutterSound(false);
 
-          AudioManager audioManager = (AudioManager) getActivity().getApplicationContext()
-            .getSystemService(Context.AUDIO_SERVICE);
+          AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
           int ringerMode = audioManager.getRingerMode();
           int volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+          boolean volumeEnabled = volume > 0 || Build.VERSION.SDK_INT < Build.VERSION_CODES.M;
 
-          Log.d(TAG, "AudioManager ringerMode: " + ringerMode + "volume: " + volume);
+          Log.d(TAG, "AudioManager ringerMode: " + ringerMode + " volume: " + volume + " volumeEnabled: " + volumeEnabled);
 
-          if (ringerMode == AudioManager.RINGER_MODE_NORMAL && volume > 0) {
-            mSound = new MediaActionSound();
+
+          if (ringerMode == AudioManager.RINGER_MODE_NORMAL && volumeEnabled) {
             mSound.play(MediaActionSound.SHUTTER_CLICK);
           }
 

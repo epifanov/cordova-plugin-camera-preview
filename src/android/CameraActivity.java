@@ -784,7 +784,24 @@ public class CameraActivity extends Fragment {
 
           params.setRotation(mPreview.getDisplayOrientation());
           mCamera.setParameters(params);
-          mCamera.takePicture(shutterCallback, null, jpegPictureCallback);
+
+          ShutterCallback currentShutterCallback;
+          AudioManager audioManager = (AudioManager) getActivity().getApplicationContext()
+            .getSystemService(Context.AUDIO_SERVICE);
+          int ringerMode = audioManager.getRingerMode();
+          int volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+          Log.d(TAG, "AudioManager ringerMode: " + ringerMode + "volume: " + volume);
+          if (ringerMode == AudioManager.RINGER_MODE_SILENT ||
+            ringerMode == AudioManager.RINGER_MODE_VIBRATE ||
+            volume == 0) {
+            // disable sound when canDisableShutterSound == false
+            currentShutterCallback = null;
+          } else {
+            currentShutterCallback = shutterCallback;
+          }
+
+          mCamera.takePicture(currentShutterCallback, null, jpegPictureCallback);
         }
       }.start();
     } else {

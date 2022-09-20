@@ -47,6 +47,7 @@ import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import androidx.exifinterface.media.ExifInterface;
 import com.intentfilter.androidpermissions.PermissionManager;
+import com.intentfilter.androidpermissions.models.DeniedPermissions;
 import org.apache.cordova.LOG;
 
 import java.io.ByteArrayInputStream;
@@ -204,7 +205,7 @@ public class CameraActivity extends Fragment {
       }
 
       @Override
-      public void onPermissionDenied() {}
+      public void onPermissionDenied(DeniedPermissions deniedPermissions) {}
     });
   }
 

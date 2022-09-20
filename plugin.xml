@@ -24,7 +24,7 @@
     <source-file src="src/android/camera_ids.xml" target-dir="res/values" />
 
     <framework src="androidx.exifinterface:exifinterface:1.2.0" />
-    <framework src="io.github.nishkarsh:android-permissions:0.1.7" />
+    <framework src="io.github.nishkarsh:android-permissions:2.1.6" />
 
     <config-file target="res/xml/config.xml" parent="/*">
       <feature name="CameraPreview">

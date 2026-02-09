@@ -125,6 +125,7 @@ public class CameraActivity extends Fragment {
   private MediaRecorder mRecorder = null;
   private String recordFilePath;
   private MediaActionSound mSound;
+  private Runnable pendingRecordAction;
 
   public void setEventListener(CameraPreviewListener listener){
     eventListener = listener;
@@ -216,13 +217,30 @@ public class CameraActivity extends Fragment {
     this.height = height;
   }
 
+  private int getStatusBarHeight() {
+    int statusBarHeight = 0;
+    int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+    if (resourceId > 0) {
+      statusBarHeight = getResources().getDimensionPixelSize(resourceId);
+    }
+    return statusBarHeight;
+  }
+
   private void createCameraPreview(){
     if(mPreview == null) {
       setDefaultCameraId();
 
       //set box position and size
       FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(width, height);
-      layoutParams.setMargins(x, y, 0, 0);
+      
+      int adjustedY = y;
+      // Samsung devices include status bar in Y coordinate calculation, need to push preview down
+      if("samsung".equalsIgnoreCase(Build.MANUFACTURER)) {
+        int statusBarHeight = getStatusBarHeight();
+        adjustedY = y + statusBarHeight;
+      }
+      
+      layoutParams.setMargins(x, adjustedY, 0, 0);
       frameContainerLayout = (FrameLayout) view.findViewById(getResources().getIdentifier("frame_container", "id", appResourcesPackage));
       frameContainerLayout.setLayoutParams(layoutParams);
 
@@ -411,6 +429,12 @@ public class CameraActivity extends Fragment {
       });
     }
     mOrientationEventListener.enable();
+
+    if (pendingRecordAction != null) {
+      Runnable action = pendingRecordAction;
+      pendingRecordAction = null;
+      action.run();
+    }
   }
 
   @Override
@@ -418,6 +442,7 @@ public class CameraActivity extends Fragment {
     super.onPause();
     mOrientationEventListener.disable();
     mLocationManager.removeUpdates(mLocationListener);
+    pendingRecordAction = null;
 
     if (mSound != null) {
       mSound.release();
@@ -441,6 +466,7 @@ public class CameraActivity extends Fragment {
     super.onDestroyView();
     mOrientationEventListener.disable();
     mLocationManager.removeUpdates(mLocationListener);
+    pendingRecordAction = null;
 
     if (mSound != null) {
       mSound.release();
@@ -824,6 +850,18 @@ public class CameraActivity extends Fragment {
 
   public void startRecord(final String filePath, final String camera, final int width, final int height, final int quality, final boolean withFlash){
     Log.d(TAG, "CameraPreview startRecord camera: " + camera + " width: " + width + ", height: " + height + ", quality: " + quality);
+
+    if (mCamera == null) {
+      Log.d(TAG, "Camera is null, deferring recording until onResume...");
+      pendingRecordAction = new Runnable() {
+        @Override
+        public void run() {
+          startRecord(filePath, camera, width, height, quality, withFlash);
+        }
+      };
+      return;
+    }
+
     Activity activity = getActivity();
     muteStream(true, activity);
     if (this.mRecordingState == RecordingState.STARTED) {
@@ -850,28 +888,30 @@ public class CameraActivity extends Fragment {
       mRecorder.setCamera(mCamera);
 
       CamcorderProfile profile;
-      if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_HIGH)) {
-        profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_HIGH);
-      } else {
-        if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_480P)) {
-          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_480P);
-        } else {
-          if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_720P)) {
-            profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_720P);
-          } else {
-            if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_1080P)) {
-              profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_1080P);
-            } else {
-              profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_LOW);
-            }
-          }
-        }
-      }
+      int bitrate;
 
+      switch (quality) {
+        case 1080:
+          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_1080P);
+          bitrate = 8_000_000;
+          break;
+        case 720:
+          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_720P);
+          bitrate = 5_000_000;
+          break;
+        case 480:
+          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_480P);
+          bitrate = 2_000_000;
+          break;
+        default:
+          throw new IllegalArgumentException("Quality must be 480, 720 or 1080");
+      }
 
       mRecorder.setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION);
       mRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
       mRecorder.setProfile(profile);
+      mRecorder.setVideoEncodingBitRate(bitrate);
+      mRecorder.setVideoFrameRate(30);
       mRecorder.setOutputFile(filePath);
       mRecorder.setOrientationHint(mOrientationHint);
 

@@ -217,15 +217,6 @@ public class CameraActivity extends Fragment {
     this.height = height;
   }
 
-  private int getStatusBarHeight() {
-    int statusBarHeight = 0;
-    int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
-    if (resourceId > 0) {
-      statusBarHeight = getResources().getDimensionPixelSize(resourceId);
-    }
-    return statusBarHeight;
-  }
-
   private void createCameraPreview(){
     if(mPreview == null) {
       setDefaultCameraId();
@@ -234,10 +225,13 @@ public class CameraActivity extends Fragment {
       FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(width, height);
       
       int adjustedY = y;
-      // Samsung devices include status bar in Y coordinate calculation, need to push preview down
-      if("samsung".equalsIgnoreCase(Build.MANUFACTURER)) {
-        int statusBarHeight = getStatusBarHeight();
-        adjustedY = y + statusBarHeight;
+
+      View decorView = mActivity.getWindow().getDecorView();
+      android.view.WindowInsets insets = decorView.getRootWindowInsets();
+
+      int statusBarInset = insets.getSystemWindowInsetTop();
+      if (statusBarInset > 0) {
+        adjustedY += statusBarInset;
       }
       
       layoutParams.setMargins(x, adjustedY, 0, 0);
@@ -392,7 +386,11 @@ public class CameraActivity extends Fragment {
     mSound.load(MediaActionSound.SHUTTER_CLICK);
 
     if (cameraParameters != null) {
-      mCamera.setParameters(cameraParameters);
+      try {
+        mCamera.setParameters(cameraParameters);
+      } catch (Exception e) {
+        Log.e(TAG, "Could not restore camera parameters", e);
+      }
     }
 
     cameraCurrentlyLocked = defaultCameraId;
@@ -450,7 +448,6 @@ public class CameraActivity extends Fragment {
 
     // Because the Camera object is a shared resource, it's very important to release it when the activity is paused.
     if (mCamera != null) {
-      setDefaultCameraId();
       mPreview.setCamera(null, -1);
       mCamera.setPreviewCallback(null);
       mCamera.release();
@@ -473,7 +470,6 @@ public class CameraActivity extends Fragment {
     }
 
     if (mCamera != null) {
-      setDefaultCameraId();
       mPreview.setCamera(null, -1);
       mCamera.setPreviewCallback(null);
       mCamera.release();
@@ -508,7 +504,8 @@ public class CameraActivity extends Fragment {
 
       Log.d(TAG, "cameraCurrentlyLocked := " + Integer.toString(cameraCurrentlyLocked));
       try {
-        cameraCurrentlyLocked = (cameraCurrentlyLocked + 1) % numberOfCameras;
+        cameraCurrentlyLocked = (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_BACK) ? Camera.CameraInfo.CAMERA_FACING_FRONT : Camera.CameraInfo.CAMERA_FACING_BACK;
+        defaultCameraId = cameraCurrentlyLocked;
         Log.d(TAG, "cameraCurrentlyLocked new: " + cameraCurrentlyLocked);
       } catch (Exception exception) {
         Log.d(TAG, exception.getMessage());
@@ -586,20 +583,6 @@ public class CameraActivity extends Fragment {
     return getTempDirectoryPath() + "/cpcp_capture_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8) + ".jpg";
   }
 
-  private int getRotationInDegrees() {
-    boolean frontCamera = mPreview.getCameraFacing() == Camera.CameraInfo.CAMERA_FACING_FRONT;
-    switch (mCurrentOrientation) {
-      case Surface.ROTATION_90:
-        return frontCamera ? 270 : 90;
-      case Surface.ROTATION_180:
-        return 180;
-      case Surface.ROTATION_270:
-        return frontCamera ? 90 : 270;
-      default:
-        return 0;
-    }
-  }
-
   PictureCallback jpegPictureCallback = new PictureCallback(){
     public void onPictureTaken(byte[] data, Camera arg1){
       Log.d(TAG, "CameraPreview jpegPictureCallback");
@@ -610,7 +593,7 @@ public class CameraActivity extends Fragment {
           if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
             matrix.preScale(1.0f, -1.0f);
           }
-          int rotationInDegrees = getRotationInDegrees();
+          int rotationInDegrees = calculateOrientationHint();
           if (rotationInDegrees != 0) {
             matrix.preRotate(rotationInDegrees);
           }
@@ -824,7 +807,7 @@ public class CameraActivity extends Fragment {
             params.setJpegQuality(quality);
           }
 
-          params.setRotation(mPreview.getDisplayOrientation());
+          params.setRotation(0);
           mCamera.setParameters(params);
           mCamera.enableShutterSound(false);
 
@@ -871,8 +854,6 @@ public class CameraActivity extends Fragment {
 
     this.recordFilePath = filePath;
     int mOrientationHint = calculateOrientationHint();
-    int videoWidth = 0;//set whatever
-    int videoHeight = 0;//set whatever
 
     Camera.Parameters cameraParams = mCamera.getParameters();
     if (withFlash) {
@@ -892,15 +873,15 @@ public class CameraActivity extends Fragment {
 
       switch (quality) {
         case 1080:
-          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_1080P);
+          profile = CamcorderProfile.get(cameraCurrentlyLocked, CamcorderProfile.QUALITY_1080P);
           bitrate = 8_000_000;
           break;
         case 720:
-          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_720P);
+          profile = CamcorderProfile.get(cameraCurrentlyLocked, CamcorderProfile.QUALITY_720P);
           bitrate = 5_000_000;
           break;
         case 480:
-          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_480P);
+          profile = CamcorderProfile.get(cameraCurrentlyLocked, CamcorderProfile.QUALITY_480P);
           bitrate = 2_000_000;
           break;
         default:
@@ -927,15 +908,13 @@ public class CameraActivity extends Fragment {
   public int calculateOrientationHint() {
     DisplayMetrics dm = new DisplayMetrics();
     Camera.CameraInfo info = new Camera.CameraInfo();
-    Camera.getCameraInfo(defaultCameraId, info);
+    Camera.getCameraInfo(cameraCurrentlyLocked, info);
     int cameraRotationOffset = info.orientation;
     Activity activity = getActivity();
 
     activity.getWindowManager().getDefaultDisplay().getMetrics(dm);
-    int currentScreenRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-
     int degrees = 0;
-    switch (currentScreenRotation) {
+    switch (mCurrentOrientation) {
       case Surface.ROTATION_0:
         degrees = 0;
         break;
@@ -953,9 +932,6 @@ public class CameraActivity extends Fragment {
     int orientation;
     if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
       orientation = (cameraRotationOffset + degrees) % 360;
-      if (degrees != 0) {
-        orientation = (360 - orientation) % 360;
-      }
     } else {
       orientation = (cameraRotationOffset - degrees + 360) % 360;
     }
@@ -971,11 +947,13 @@ public class CameraActivity extends Fragment {
       mRecorder.reset();   // clear recorder configuration
       mRecorder.release(); // release the recorder object
       mRecorder = null;
-      mCamera.lock();
-      Camera.Parameters cameraParams = mCamera.getParameters();
-      cameraParams.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
-      mCamera.setParameters(cameraParams);
-      mCamera.startPreview();
+      if (mCamera != null) {
+        mCamera.lock();
+        Camera.Parameters cameraParams = mCamera.getParameters();
+        cameraParams.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
+        mCamera.setParameters(cameraParams);
+        mCamera.startPreview();
+      }
       eventListener.onStopRecordVideo(this.recordFilePath);
     } catch (Exception e) {
       eventListener.onStopRecordVideoError(e.getMessage());

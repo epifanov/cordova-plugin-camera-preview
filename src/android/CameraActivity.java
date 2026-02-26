@@ -226,12 +226,14 @@ public class CameraActivity extends Fragment {
       
       int adjustedY = y;
 
-      View decorView = mActivity.getWindow().getDecorView();
-      android.view.WindowInsets insets = decorView.getRootWindowInsets();
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        View decorView = mActivity.getWindow().getDecorView();
+        android.view.WindowInsets insets = decorView.getRootWindowInsets();
 
-      int statusBarInset = insets.getSystemWindowInsetTop();
-      if (statusBarInset > 0) {
-        adjustedY += statusBarInset;
+        int statusBarInset = insets.getSystemWindowInsetTop();
+        if (statusBarInset > 0) {
+          adjustedY += statusBarInset;
+        }
       }
       
       layoutParams.setMargins(x, adjustedY, 0, 0);
@@ -390,6 +392,7 @@ public class CameraActivity extends Fragment {
         mCamera.setParameters(cameraParameters);
       } catch (Exception e) {
         Log.e(TAG, "Could not restore camera parameters", e);
+        cameraParameters = mCamera.getParameters();
       }
     }
 
@@ -402,6 +405,7 @@ public class CameraActivity extends Fragment {
       mPreview.switchCamera(mCamera, cameraCurrentlyLocked);
       mCamera.startPreview();
     }
+    view.requestLayout();
 
     Log.d(TAG, "cameraCurrentlyLocked:" + cameraCurrentlyLocked);
 
@@ -450,6 +454,7 @@ public class CameraActivity extends Fragment {
     if (mCamera != null) {
       mPreview.setCamera(null, -1);
       mCamera.setPreviewCallback(null);
+      mCamera.stopPreview();
       mCamera.release();
       mCamera = null;
     }
@@ -472,6 +477,7 @@ public class CameraActivity extends Fragment {
     if (mCamera != null) {
       mPreview.setCamera(null, -1);
       mCamera.setPreviewCallback(null);
+      mCamera.stopPreview();
       mCamera.release();
       mCamera = null;
     }
@@ -590,12 +596,12 @@ public class CameraActivity extends Fragment {
       try {
         if (!disableExifHeaderStripping) {
           Matrix matrix = new Matrix();
-          if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            matrix.preScale(1.0f, -1.0f);
-          }
           int rotationInDegrees = calculateOrientationHint();
           if (rotationInDegrees != 0) {
-            matrix.preRotate(rotationInDegrees);
+            matrix.postRotate(rotationInDegrees);
+          }
+          if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            matrix.postScale(-1.0f, 1.0f);
           }
 
           // Check if matrix has changed. In that case, apply matrix and override data
@@ -929,12 +935,7 @@ public class CameraActivity extends Fragment {
         break;
     }
 
-    int orientation;
-    if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-      orientation = (cameraRotationOffset + degrees) % 360;
-    } else {
-      orientation = (cameraRotationOffset - degrees + 360) % 360;
-    }
+    int orientation = (cameraRotationOffset - degrees + 360) % 360;
     Log.w(TAG, "************orientationHint ***********= " + orientation);
 
     return orientation;

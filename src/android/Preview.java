@@ -67,6 +67,7 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
       }
 
       try {
+        params.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
         mCamera.setParameters(params);
       } catch (RuntimeException e) {
         Log.e(TAG, "Failed to set camera parameters in setCamera", e);

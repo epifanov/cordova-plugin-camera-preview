@@ -596,10 +596,6 @@ public class CameraActivity extends Fragment {
       try {
         if (!disableExifHeaderStripping) {
           Matrix matrix = new Matrix();
-          int rotationInDegrees = calculateOrientationHint();
-          if (rotationInDegrees != 0) {
-            matrix.postRotate(rotationInDegrees);
-          }
           if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
             matrix.postScale(-1.0f, 1.0f);
           }
@@ -813,7 +809,8 @@ public class CameraActivity extends Fragment {
             params.setJpegQuality(quality);
           }
 
-          params.setRotation(0);
+          int rotationInDegrees = calculateOrientationHint();
+          params.setRotation(rotationInDegrees);
           mCamera.setParameters(params);
           mCamera.enableShutterSound(false);
 
@@ -935,7 +932,11 @@ public class CameraActivity extends Fragment {
         break;
     }
 
-    int orientation = (cameraRotationOffset - degrees + 360) % 360;
+    int orientation = (cameraRotationOffset + degrees) % 360;
+    if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+      orientation = (cameraRotationOffset - degrees + 360) % 360;
+    }
+
     Log.w(TAG, "************orientationHint ***********= " + orientation);
 
     return orientation;

@@ -278,8 +278,13 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
   private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
     final double ASPECT_TOLERANCE = 0.1;
     double targetRatio = (double) w / h;
+    int targetHeight = h;
+    int targetWidth = w;
+
     if (displayOrientation == 90 || displayOrientation == 270) {
       targetRatio = (double) h / w;
+      targetHeight = w;
+      targetWidth = h;
     }
 
     if(sizes == null){
@@ -289,15 +294,13 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
     Camera.Size optimalSize = null;
     double minDiff = Double.MAX_VALUE;
 
-    int targetHeight = h;
-
     // Try to find an size match aspect ratio and size
     for (Camera.Size size : sizes) {
       double ratio = (double) size.width / size.height;
       if (Math.abs(ratio - targetRatio) > ASPECT_TOLERANCE) continue;
-      if (Math.abs(size.height - targetHeight) < minDiff) {
+      if (Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth) < minDiff) {
         optimalSize = size;
-        minDiff = Math.abs(size.height - targetHeight);
+        minDiff = Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth);
       }
     }
 
@@ -305,9 +308,9 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
     if (optimalSize == null) {
       minDiff = Double.MAX_VALUE;
       for (Camera.Size size : sizes) {
-        if (Math.abs(size.height - targetHeight) < minDiff) {
+        if (Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth) < minDiff) {
           optimalSize = size;
-          minDiff = Math.abs(size.height - targetHeight);
+          minDiff = Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth);
         }
       }
     }

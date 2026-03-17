@@ -201,10 +201,13 @@ public class CameraActivity extends Fragment {
       @SuppressLint("MissingPermission")
       @Override
       public void onPermissionGranted() {
-        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000 * 10, 10, mLocationListener);
-        mLocationManager.requestLocationUpdates( LocationManager.NETWORK_PROVIDER, 1000 * 10, 10, mLocationListener);
+        if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+          mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000 * 10, 10, mLocationListener);
+        }
+        if (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+          mLocationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000 * 10, 10, mLocationListener);
+        }
       }
-
       @Override
       public void onPermissionDenied(DeniedPermissions deniedPermissions) {}
     });

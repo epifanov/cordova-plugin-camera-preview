@@ -598,9 +598,17 @@ public class CameraActivity extends Fragment {
 
       try {
         if (!disableExifHeaderStripping) {
+          ExifInterface exif = new ExifInterface(new ByteArrayInputStream(data));
+          int exifOrientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+          int rotationDegrees = exifToDegrees(exifOrientation);
+
           Matrix matrix = new Matrix();
           if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
             matrix.postScale(-1.0f, 1.0f);
+          }
+          
+          if (rotationDegrees != 0) {
+            matrix.preRotate(rotationDegrees);
           }
 
           // Check if matrix has changed. In that case, apply matrix and override data

@@ -188,7 +188,7 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
     final int height = resolveSize(getSuggestedMinimumHeight(), heightMeasureSpec);
     setMeasuredDimension(width, height);
 
-    if (mSupportedPreviewSizes != null) {
+    if (mSupportedPreviewSizes != null && width > 0 && height > 0) {
       mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, width, height);
     }
   }
@@ -324,6 +324,7 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
       try {
         // Now that the size is known, set up the camera parameters and begin
         // the preview.
+        mCamera.stopPreview();
         mCamera.setPreviewDisplay(holder);
         mSupportedPreviewSizes = mCamera.getParameters().getSupportedPreviewSizes();
         if (mSupportedPreviewSizes != null) {
@@ -331,13 +332,8 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
         }
         Camera.Parameters parameters = mCamera.getParameters();
         parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
+        mCamera.setParameters(parameters);
         requestLayout();
-        //mCamera.setDisplayOrientation(90);
-        try {
-          mCamera.setParameters(parameters);
-        } catch (RuntimeException e) {
-          Log.e(TAG, "Failed setParameters in surfaceChanged", e);
-        }
         mCamera.startPreview();
       } catch (Exception exception) {
         Log.e(TAG, "Exception caused by surfaceChanged()", exception);

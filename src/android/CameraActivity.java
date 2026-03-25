@@ -125,6 +125,7 @@ public class CameraActivity extends Fragment {
   private MediaRecorder mRecorder = null;
   private String recordFilePath;
   private MediaActionSound mSound;
+  private Runnable pendingRecordAction;
 
   public void setEventListener(CameraPreviewListener listener){
     eventListener = listener;
@@ -200,10 +201,13 @@ public class CameraActivity extends Fragment {
       @SuppressLint("MissingPermission")
       @Override
       public void onPermissionGranted() {
-        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000 * 10, 10, mLocationListener);
-        mLocationManager.requestLocationUpdates( LocationManager.NETWORK_PROVIDER, 1000 * 10, 10, mLocationListener);
+        if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+          mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000 * 10, 10, mLocationListener);
+        }
+        if (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+          mLocationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000 * 10, 10, mLocationListener);
+        }
       }
-
       @Override
       public void onPermissionDenied(DeniedPermissions deniedPermissions) {}
     });
@@ -222,7 +226,20 @@ public class CameraActivity extends Fragment {
 
       //set box position and size
       FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(width, height);
-      layoutParams.setMargins(x, y, 0, 0);
+      
+      int adjustedY = y;
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        View decorView = mActivity.getWindow().getDecorView();
+        android.view.WindowInsets insets = decorView.getRootWindowInsets();
+
+        int statusBarInset = insets.getSystemWindowInsetTop();
+        if (statusBarInset > 0) {
+          adjustedY += statusBarInset;
+        }
+      }
+      
+      layoutParams.setMargins(x, adjustedY, 0, 0);
       frameContainerLayout = (FrameLayout) view.findViewById(getResources().getIdentifier("frame_container", "id", appResourcesPackage));
       frameContainerLayout.setLayoutParams(layoutParams);
 
@@ -374,7 +391,12 @@ public class CameraActivity extends Fragment {
     mSound.load(MediaActionSound.SHUTTER_CLICK);
 
     if (cameraParameters != null) {
-      mCamera.setParameters(cameraParameters);
+      try {
+        mCamera.setParameters(cameraParameters);
+      } catch (Exception e) {
+        Log.e(TAG, "Could not restore camera parameters", e);
+        cameraParameters = mCamera.getParameters();
+      }
     }
 
     cameraCurrentlyLocked = defaultCameraId;
@@ -386,6 +408,7 @@ public class CameraActivity extends Fragment {
       mPreview.switchCamera(mCamera, cameraCurrentlyLocked);
       mCamera.startPreview();
     }
+    view.requestLayout();
 
     Log.d(TAG, "cameraCurrentlyLocked:" + cameraCurrentlyLocked);
 
@@ -411,6 +434,12 @@ public class CameraActivity extends Fragment {
       });
     }
     mOrientationEventListener.enable();
+
+    if (pendingRecordAction != null) {
+      Runnable action = pendingRecordAction;
+      pendingRecordAction = null;
+      action.run();
+    }
   }
 
   @Override
@@ -418,6 +447,7 @@ public class CameraActivity extends Fragment {
     super.onPause();
     mOrientationEventListener.disable();
     mLocationManager.removeUpdates(mLocationListener);
+    pendingRecordAction = null;
 
     if (mSound != null) {
       mSound.release();
@@ -425,9 +455,9 @@ public class CameraActivity extends Fragment {
 
     // Because the Camera object is a shared resource, it's very important to release it when the activity is paused.
     if (mCamera != null) {
-      setDefaultCameraId();
       mPreview.setCamera(null, -1);
       mCamera.setPreviewCallback(null);
+      mCamera.stopPreview();
       mCamera.release();
       mCamera = null;
     }
@@ -441,15 +471,16 @@ public class CameraActivity extends Fragment {
     super.onDestroyView();
     mOrientationEventListener.disable();
     mLocationManager.removeUpdates(mLocationListener);
+    pendingRecordAction = null;
 
     if (mSound != null) {
       mSound.release();
     }
 
     if (mCamera != null) {
-      setDefaultCameraId();
       mPreview.setCamera(null, -1);
       mCamera.setPreviewCallback(null);
+      mCamera.stopPreview();
       mCamera.release();
       mCamera = null;
     }
@@ -482,7 +513,8 @@ public class CameraActivity extends Fragment {
 
       Log.d(TAG, "cameraCurrentlyLocked := " + Integer.toString(cameraCurrentlyLocked));
       try {
-        cameraCurrentlyLocked = (cameraCurrentlyLocked + 1) % numberOfCameras;
+        cameraCurrentlyLocked = (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_BACK) ? Camera.CameraInfo.CAMERA_FACING_FRONT : Camera.CameraInfo.CAMERA_FACING_BACK;
+        defaultCameraId = cameraCurrentlyLocked;
         Log.d(TAG, "cameraCurrentlyLocked new: " + cameraCurrentlyLocked);
       } catch (Exception exception) {
         Log.d(TAG, exception.getMessage());
@@ -560,33 +592,23 @@ public class CameraActivity extends Fragment {
     return getTempDirectoryPath() + "/cpcp_capture_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8) + ".jpg";
   }
 
-  private int getRotationInDegrees() {
-    boolean frontCamera = mPreview.getCameraFacing() == Camera.CameraInfo.CAMERA_FACING_FRONT;
-    switch (mCurrentOrientation) {
-      case Surface.ROTATION_90:
-        return frontCamera ? 270 : 90;
-      case Surface.ROTATION_180:
-        return 180;
-      case Surface.ROTATION_270:
-        return frontCamera ? 90 : 270;
-      default:
-        return 0;
-    }
-  }
-
   PictureCallback jpegPictureCallback = new PictureCallback(){
     public void onPictureTaken(byte[] data, Camera arg1){
       Log.d(TAG, "CameraPreview jpegPictureCallback");
 
       try {
         if (!disableExifHeaderStripping) {
+          ExifInterface exif = new ExifInterface(new ByteArrayInputStream(data));
+          int exifOrientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+          int rotationDegrees = exifToDegrees(exifOrientation);
+
           Matrix matrix = new Matrix();
           if (cameraCurrentlyLocked == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            matrix.preScale(1.0f, -1.0f);
+            matrix.postScale(-1.0f, 1.0f);
           }
-          int rotationInDegrees = getRotationInDegrees();
-          if (rotationInDegrees != 0) {
-            matrix.preRotate(rotationInDegrees);
+          
+          if (rotationDegrees != 0) {
+            matrix.preRotate(rotationDegrees);
           }
 
           // Check if matrix has changed. In that case, apply matrix and override data
@@ -798,7 +820,8 @@ public class CameraActivity extends Fragment {
             params.setJpegQuality(quality);
           }
 
-          params.setRotation(mPreview.getDisplayOrientation());
+          int rotationInDegrees = calculateOrientationHint();
+          params.setRotation(rotationInDegrees);
           mCamera.setParameters(params);
           mCamera.enableShutterSound(false);
 
@@ -824,6 +847,18 @@ public class CameraActivity extends Fragment {
 
   public void startRecord(final String filePath, final String camera, final int width, final int height, final int quality, final boolean withFlash){
     Log.d(TAG, "CameraPreview startRecord camera: " + camera + " width: " + width + ", height: " + height + ", quality: " + quality);
+
+    if (mCamera == null) {
+      Log.d(TAG, "Camera is null, deferring recording until onResume...");
+      pendingRecordAction = new Runnable() {
+        @Override
+        public void run() {
+          startRecord(filePath, camera, width, height, quality, withFlash);
+        }
+      };
+      return;
+    }
+
     Activity activity = getActivity();
     muteStream(true, activity);
     if (this.mRecordingState == RecordingState.STARTED) {
@@ -833,8 +868,6 @@ public class CameraActivity extends Fragment {
 
     this.recordFilePath = filePath;
     int mOrientationHint = calculateOrientationHint();
-    int videoWidth = 0;//set whatever
-    int videoHeight = 0;//set whatever
 
     Camera.Parameters cameraParams = mCamera.getParameters();
     if (withFlash) {
@@ -850,28 +883,30 @@ public class CameraActivity extends Fragment {
       mRecorder.setCamera(mCamera);
 
       CamcorderProfile profile;
-      if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_HIGH)) {
-        profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_HIGH);
-      } else {
-        if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_480P)) {
-          profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_480P);
-        } else {
-          if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_720P)) {
-            profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_720P);
-          } else {
-            if (CamcorderProfile.hasProfile(defaultCameraId, CamcorderProfile.QUALITY_1080P)) {
-              profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_1080P);
-            } else {
-              profile = CamcorderProfile.get(defaultCameraId, CamcorderProfile.QUALITY_LOW);
-            }
-          }
-        }
-      }
+      int bitrate;
 
+      switch (quality) {
+        case 1080:
+          profile = CamcorderProfile.get(cameraCurrentlyLocked, CamcorderProfile.QUALITY_1080P);
+          bitrate = 8_000_000;
+          break;
+        case 720:
+          profile = CamcorderProfile.get(cameraCurrentlyLocked, CamcorderProfile.QUALITY_720P);
+          bitrate = 5_000_000;
+          break;
+        case 480:
+          profile = CamcorderProfile.get(cameraCurrentlyLocked, CamcorderProfile.QUALITY_480P);
+          bitrate = 2_000_000;
+          break;
+        default:
+          throw new IllegalArgumentException("Quality must be 480, 720 or 1080");
+      }
 
       mRecorder.setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION);
       mRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
       mRecorder.setProfile(profile);
+      mRecorder.setVideoEncodingBitRate(bitrate);
+      mRecorder.setVideoFrameRate(30);
       mRecorder.setOutputFile(filePath);
       mRecorder.setOrientationHint(mOrientationHint);
 
@@ -887,15 +922,13 @@ public class CameraActivity extends Fragment {
   public int calculateOrientationHint() {
     DisplayMetrics dm = new DisplayMetrics();
     Camera.CameraInfo info = new Camera.CameraInfo();
-    Camera.getCameraInfo(defaultCameraId, info);
+    Camera.getCameraInfo(cameraCurrentlyLocked, info);
     int cameraRotationOffset = info.orientation;
     Activity activity = getActivity();
 
     activity.getWindowManager().getDefaultDisplay().getMetrics(dm);
-    int currentScreenRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-
     int degrees = 0;
-    switch (currentScreenRotation) {
+    switch (mCurrentOrientation) {
       case Surface.ROTATION_0:
         degrees = 0;
         break;
@@ -910,15 +943,11 @@ public class CameraActivity extends Fragment {
         break;
     }
 
-    int orientation;
+    int orientation = (cameraRotationOffset + degrees) % 360;
     if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-      orientation = (cameraRotationOffset + degrees) % 360;
-      if (degrees != 0) {
-        orientation = (360 - orientation) % 360;
-      }
-    } else {
       orientation = (cameraRotationOffset - degrees + 360) % 360;
     }
+
     Log.w(TAG, "************orientationHint ***********= " + orientation);
 
     return orientation;
@@ -931,11 +960,13 @@ public class CameraActivity extends Fragment {
       mRecorder.reset();   // clear recorder configuration
       mRecorder.release(); // release the recorder object
       mRecorder = null;
-      mCamera.lock();
-      Camera.Parameters cameraParams = mCamera.getParameters();
-      cameraParams.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
-      mCamera.setParameters(cameraParams);
-      mCamera.startPreview();
+      if (mCamera != null) {
+        mCamera.lock();
+        Camera.Parameters cameraParams = mCamera.getParameters();
+        cameraParams.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
+        mCamera.setParameters(cameraParams);
+        mCamera.startPreview();
+      }
       eventListener.onStopRecordVideo(this.recordFilePath);
     } catch (Exception e) {
       eventListener.onStopRecordVideoError(e.getMessage());

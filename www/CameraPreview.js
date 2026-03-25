@@ -266,10 +266,6 @@ CameraPreview.startRecordVideo = function (opts, onSuccess, onError) {
   opts.width = opts.width || 0;
   opts.height = opts.height || 0;
 
-  if (!opts.quality || opts.quality > 100 || opts.quality < 0) {
-    opts.quality = 85;
-  }
-
   exec(onSuccess, onError, PLUGIN_NAME, "startRecordVideo", [opts.cameraDirection, opts.width, opts.height, opts.quality, opts.withFlash]);
 };
 

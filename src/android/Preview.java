@@ -65,7 +65,26 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
       } else if (mFocusModes.contains("auto")){
         params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
       }
-      mCamera.setParameters(params);
+
+      try {
+        params.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
+        mCamera.setParameters(params);
+      } catch (RuntimeException e) {
+        Log.e(TAG, "Failed to set camera parameters in setCamera", e);
+      }
+
+      if (mHolder.getSurface().isValid()) {
+        try {
+          mCamera.setPreviewDisplay(mHolder);
+          if (mPreviewSize != null) {
+            mCamera.startPreview();
+          } else {
+            requestLayout();
+          }
+        } catch (IOException e) {
+          Log.e(TAG, "Exception caused by setPreviewDisplay()", e);
+        }
+      }
     }
   }
 
@@ -141,11 +160,20 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
       Log.d("CameraPreview", "before setPreviewSize");
 
       mSupportedPreviewSizes = parameters.getSupportedPreviewSizes();
-      mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, mSurfaceView.getWidth(), mSurfaceView.getHeight());
-      parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
-      Log.d(TAG, mPreviewSize.width + " " + mPreviewSize.height);
 
-      camera.setParameters(parameters);
+      if (mSurfaceView.getWidth() > 0 && mSurfaceView.getHeight() > 0 && mSupportedPreviewSizes != null) {
+        mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, mSurfaceView.getWidth(), mSurfaceView.getHeight());
+      }
+
+      if (mPreviewSize != null) {
+        parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
+        Log.d(TAG, mPreviewSize.width + " " + mPreviewSize.height);
+        try {
+          camera.setParameters(parameters);
+        } catch (RuntimeException e) {
+          Log.e(TAG, "Failed to set camera parameters in switchCamera", e);
+        }
+      }
     } catch (IOException exception) {
       Log.e(TAG, exception.getMessage());
     }
@@ -160,7 +188,7 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
     final int height = resolveSize(getSuggestedMinimumHeight(), heightMeasureSpec);
     setMeasuredDimension(width, height);
 
-    if (mSupportedPreviewSizes != null) {
+    if (mSupportedPreviewSizes != null && width > 0 && height > 0) {
       mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, width, height);
     }
   }
@@ -228,6 +256,9 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
       if (mCamera != null) {
         mSurfaceView.setWillNotDraw(false);
         mCamera.setPreviewDisplay(holder);
+        if (mPreviewSize != null) {
+          mCamera.startPreview();
+        }
       }
     } catch (Exception exception) {
       Log.e(TAG, "Exception caused by setPreviewDisplay()", exception);
@@ -247,8 +278,13 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
   private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
     final double ASPECT_TOLERANCE = 0.1;
     double targetRatio = (double) w / h;
+    int targetHeight = h;
+    int targetWidth = w;
+
     if (displayOrientation == 90 || displayOrientation == 270) {
       targetRatio = (double) h / w;
+      targetHeight = w;
+      targetWidth = h;
     }
 
     if(sizes == null){
@@ -258,15 +294,13 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
     Camera.Size optimalSize = null;
     double minDiff = Double.MAX_VALUE;
 
-    int targetHeight = h;
-
     // Try to find an size match aspect ratio and size
     for (Camera.Size size : sizes) {
       double ratio = (double) size.width / size.height;
       if (Math.abs(ratio - targetRatio) > ASPECT_TOLERANCE) continue;
-      if (Math.abs(size.height - targetHeight) < minDiff) {
+      if (Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth) < minDiff) {
         optimalSize = size;
-        minDiff = Math.abs(size.height - targetHeight);
+        minDiff = Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth);
       }
     }
 
@@ -274,9 +308,9 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
     if (optimalSize == null) {
       minDiff = Double.MAX_VALUE;
       for (Camera.Size size : sizes) {
-        if (Math.abs(size.height - targetHeight) < minDiff) {
+        if (Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth) < minDiff) {
           optimalSize = size;
-          minDiff = Math.abs(size.height - targetHeight);
+          minDiff = Math.abs(size.height - targetHeight) + Math.abs(size.width - targetWidth);
         }
       }
     }
@@ -290,15 +324,16 @@ class Preview extends RelativeLayout implements SurfaceHolder.Callback {
       try {
         // Now that the size is known, set up the camera parameters and begin
         // the preview.
+        mCamera.stopPreview();
+        mCamera.setPreviewDisplay(holder);
         mSupportedPreviewSizes = mCamera.getParameters().getSupportedPreviewSizes();
         if (mSupportedPreviewSizes != null) {
           mPreviewSize = getOptimalPreviewSize(mSupportedPreviewSizes, w, h);
         }
         Camera.Parameters parameters = mCamera.getParameters();
         parameters.setPreviewSize(mPreviewSize.width, mPreviewSize.height);
-        requestLayout();
-        //mCamera.setDisplayOrientation(90);
         mCamera.setParameters(parameters);
+        requestLayout();
         mCamera.startPreview();
       } catch (Exception exception) {
         Log.e(TAG, "Exception caused by surfaceChanged()", exception);

@@ -83,8 +83,7 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
   };
 
   private static final String [] videoPermissions = {
-    Manifest.permission.RECORD_AUDIO,
-    Manifest.permission.WRITE_EXTERNAL_STORAGE
+    Manifest.permission.RECORD_AUDIO
   };
 
   private CameraActivity fragment;
@@ -124,7 +123,7 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
     } else if (TAKE_SNAPSHOT_ACTION.equals(action)) {
       return takeSnapshot(args.getInt(0), callbackContext);
     }else if (START_RECORD_VIDEO_ACTION.equals(action)) {
-      if ( cordova.hasPermission(videoPermissions[0]) && cordova.hasPermission(videoPermissions[1])) {
+      if (cordova.hasPermission(videoPermissions[0])) {
         return startRecordVideo(args.getString(0), args.getInt(1), args.getInt(2), args.getInt(3), args.getBoolean(4), callbackContext);
       } else {
         this.execCallback = callbackContext;
@@ -412,11 +411,7 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
 
   public void onPictureTaken(String originalPicture) {
     Log.d(TAG, "returning picture");
-
-    JSONArray data = new JSONArray();
-    data.put(originalPicture);
-
-    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, data);
+    PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, originalPicture);
     pluginResult.setKeepCallback(fragment.tapToTakePicture);
     takePictureCallbackContext.sendPluginResult(pluginResult);
   }
@@ -1036,7 +1031,7 @@ public class CameraPreview extends CordovaPlugin implements CameraActivity.Camer
     FragmentManager fragmentManager = cordova.getActivity().getFragmentManager();
     FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
     fragmentTransaction.hide(fragment);
-    fragmentTransaction.commit();
+    fragmentTransaction.commitAllowingStateLoss();
 
     callbackContext.success();
     return true;

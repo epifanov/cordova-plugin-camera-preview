@@ -673,7 +673,7 @@ public class CameraActivity extends Fragment {
 
     Camera.Size requestedSize = mCamera.new Size(size.width, size.height);
 
-    double previewAspectRatio  = (double)previewSize.width / (double)previewSize.height;
+    double previewAspectRatio = (width != 0 && height != 0) ? (double) requestedSize.width / requestedSize.height : (double) previewSize.width / previewSize.height;
 
     if (previewAspectRatio < 1.0) {
       // reset ratio to landscape

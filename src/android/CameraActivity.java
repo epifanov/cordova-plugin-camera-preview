@@ -229,16 +229,16 @@ public class CameraActivity extends Fragment {
       
       int adjustedY = y;
 
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        View decorView = mActivity.getWindow().getDecorView();
-        android.view.WindowInsets insets = decorView.getRootWindowInsets();
+      View decorView = mActivity.getWindow().getDecorView();
+      android.view.WindowInsets insets = decorView.getRootWindowInsets();
 
+      if (insets != null) {
         int statusBarInset = insets.getSystemWindowInsetTop();
         if (statusBarInset > 0) {
           adjustedY += statusBarInset;
         }
       }
-      
+
       layoutParams.setMargins(x, adjustedY, 0, 0);
       frameContainerLayout = (FrameLayout) view.findViewById(getResources().getIdentifier("frame_container", "id", appResourcesPackage));
       frameContainerLayout.setLayoutParams(layoutParams);

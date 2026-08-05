@@ -227,19 +227,7 @@ public class CameraActivity extends Fragment {
       //set box position and size
       FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(width, height);
       
-      int adjustedY = y;
-
-      View decorView = mActivity.getWindow().getDecorView();
-      android.view.WindowInsets insets = decorView.getRootWindowInsets();
-
-      if (insets != null) {
-        int statusBarInset = insets.getSystemWindowInsetTop();
-        if (statusBarInset > 0) {
-          adjustedY += statusBarInset;
-        }
-      }
-
-      layoutParams.setMargins(x, adjustedY, 0, 0);
+      layoutParams.setMargins(x, y, 0, 0);
       frameContainerLayout = (FrameLayout) view.findViewById(getResources().getIdentifier("frame_container", "id", appResourcesPackage));
       frameContainerLayout.setLayoutParams(layoutParams);
 
